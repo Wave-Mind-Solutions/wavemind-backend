@@ -3,6 +3,14 @@
  * Initialises Express, connects MongoDB, attaches Socket.io
  */
 
+// ── DNS Override (must be FIRST) ─────────────────────────────────────────────
+// Forces Node.js to use Google/Cloudflare DNS instead of the system/ISP DNS
+// which often blocks MongoDB Atlas SRV (_mongodb._tcp) lookups.
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
+// ─────────────────────────────────────────────────────────────────────────────
+
 require("dotenv").config();
 require("express-async-errors"); // patches async route errors globally
 
@@ -31,5 +39,6 @@ const startServer = async () => {
 
 startServer().catch((err) => {
   console.error("❌ Failed to start server:", err.message);
+  console.error("   ↳ Check your MONGO_URI in server/.env or Vercel env vars.");
   process.exit(1);
 });
