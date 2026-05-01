@@ -30,9 +30,24 @@ const app = express();
 app.use(helmet()); // Security headers
 app.use(compression()); // Gzip/Brotli compression
 
+// ── CORS – supports multiple origins (local, Vercel, Render) ────────────────
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(",").map((o) => o.trim()) : []),
+];
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+      // Allow server-to-server requests (no origin) and whitelisted origins
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn(`[CORS] Blocked origin: ${origin}`);
+        callback(new Error(`CORS: origin '${origin}' not allowed`));
+      }
+    },
     credentials: true,
   })
 );
@@ -45,9 +60,15 @@ if (process.env.NODE_ENV === "development") {
 
 app.use(activityLogger);
 
-// ── Health Check ───────────────────────────────────────────────────────────
+// ── Health Check & Root ────────────────────────────────────────────────────
+// GET /  → Render's default health checker pings root; must return 200
+app.get("/", (_req, res) => {
+  res.status(200).json({ status: "ok", service: "WaveMind API", version: "1.0.0" });
+});
+
+// GET /api/health  → explicit health endpoint
 app.get("/api/health", (_req, res) => {
-  res.status(200).json({ status: "ok", service: "WaveMind API" });
+  res.status(200).json({ status: "ok", service: "WaveMind API", version: "1.0.0" });
 });
 
 // ── API Routes ─────────────────────────────────────────────────────────────
@@ -64,8 +85,11 @@ app.use("/api/blog", blogRoutes);
 app.use("/api/lead", leadRoutes);
 
 // ── 404 Fallback ───────────────────────────────────────────────────────────
-app.use((_req, res) => {
-  res.status(404).json({ success: false, message: "Route not found" });
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+  });
 });
 
 // ── Global Error Handler ───────────────────────────────────────────────────
