@@ -3,10 +3,13 @@
  * Initialises Express, connects MongoDB, attaches Socket.io
  */
 
-// ── DNS Override (must be FIRST) ─────────────────────────────────────────────
-// Forces Node.js to use Google/Cloudflare DNS instead of the system/ISP DNS
-// which often blocks MongoDB Atlas SRV (_mongodb._tcp) lookups.
+// ── DNS Override (must be FIRST – before ALL other requires) ────────────────
+// Forces Node.js to use Google/Cloudflare DNS so MongoDB Atlas SRV records
+// resolve correctly even when the system/ISP DNS blocks them.
 const dns = require("dns");
+const { Resolver } = require("dns");
+const resolver = new Resolver();
+resolver.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 dns.setDefaultResultOrder("ipv4first");
 dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 // ─────────────────────────────────────────────────────────────────────────────
