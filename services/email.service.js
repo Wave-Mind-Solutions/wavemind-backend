@@ -5,6 +5,38 @@
 const transporter = require("../config/mailer");
 
 /**
+ * Retry helper for email sending with exponential backoff
+ * @param {Function} emailFn - The email sending function
+ * @param {number} maxRetries - Maximum number of retry attempts
+ */
+const sendWithRetry = async (emailFn, maxRetries = 3) => {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await emailFn();
+    } catch (err) {
+      lastError = err;
+      console.warn(`Email send attempt ${attempt} failed:`, err.message);
+      
+      // Only retry on network/timeout errors
+      if (err.code && ['ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'].includes(err.code)) {
+        if (attempt < maxRetries) {
+          const delayMs = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
+          console.log(`Retrying in ${delayMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      } else {
+        // Non-retryable errors, throw immediately
+        throw err;
+      }
+    }
+  }
+  
+  throw lastError;
+};
+
+/**
  * Send a password reset email
  * @param {string} toEmail
  * @param {string} resetUrl
@@ -31,7 +63,9 @@ const sendPasswordResetEmail = async (toEmail, resetUrl) => {
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  return sendWithRetry(async () => {
+    return await transporter.sendMail(mailOptions);
+  }, 3);
 };
 
 /**
@@ -60,7 +94,9 @@ const sendWelcomeEmail = async (toEmail, fullName) => {
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  return sendWithRetry(async () => {
+    return await transporter.sendMail(mailOptions);
+  }, 3);
 };
 
 /**
@@ -90,7 +126,9 @@ const sendProjectStatusUpdateEmail = async (toEmail, projectName, status) => {
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  return sendWithRetry(async () => {
+    return await transporter.sendMail(mailOptions);
+  }, 3);
 };
 
 /**
@@ -120,7 +158,9 @@ const sendTaskAssignmentEmail = async (toEmail, taskTitle, projectName) => {
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  return sendWithRetry(async () => {
+    return await transporter.sendMail(mailOptions);
+  }, 3);
 };
 
 /**
@@ -146,7 +186,9 @@ const sendMeetingReminderEmail = async (toEmail, meetingTitle, time) => {
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  return sendWithRetry(async () => {
+    return await transporter.sendMail(mailOptions);
+  }, 3);
 };
 
 /**
@@ -173,7 +215,9 @@ const sendOTPEmail = async (toEmail, otp) => {
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  return sendWithRetry(async () => {
+    return await transporter.sendMail(mailOptions);
+  }, 3);
 };
 
 module.exports = {

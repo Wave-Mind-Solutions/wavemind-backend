@@ -52,13 +52,14 @@ const register = async (req, res) => {
     otpExpires,
   });
 
-  // Send OTP Email
-  try {
-    console.log(`\n📧 OTP for ${user.email}: ${rawOtp}\n`);
-    await emailService.sendOTPEmail(user.email, rawOtp);
-  } catch (err) {
-    console.error("OTP Email Error:", err);
-  }
+  // Send OTP Email asynchronously in the background
+  console.log(`\n📧 OTP for ${user.email}: ${rawOtp}\n`);
+  emailService.sendOTPEmail(user.email, rawOtp)
+    .then(() => console.log(`✅ OTP email sent successfully to ${user.email}`))
+    .catch((err) => {
+      console.error("❌ OTP Email Error:", err.message || err);
+      console.error("Error Code:", err.code);
+    });
 
   res.status(201).json({
     success: true,
@@ -138,9 +139,12 @@ const resendOTP = async (req, res) => {
 
   try {
     await emailService.sendOTPEmail(user.email, rawOtp);
+    console.log(`✅ OTP email resent successfully to ${user.email}`);
     res.status(200).json({ success: true, message: "New OTP sent to your email." });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to send OTP." });
+    console.error("❌ OTP Email Error (Resend):", err.message || err);
+    console.error("Error Code:", err.code);
+    res.status(500).json({ success: false, message: "Failed to send OTP. Please try again later." });
   }
 };
 
