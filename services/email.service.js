@@ -1,67 +1,30 @@
 /**
- * Email Service
- * Sends transactional emails via Nodemailer
+ * Email Service using Resend API
+ * Replaces Nodemailer SMTP with Resend for reliable email delivery
  */
-const transporter = require("../config/mailer");
+const resend = require("../config/mailer");
 
 /**
- * Test SMTP connection
+ * Test Resend API connection
  */
-const testSMTPConnection = async () => {
+const testResendConnection = async () => {
   try {
-    console.log("🔍 Testing SMTP Connection...");
-    console.log(`Host: ${process.env.SMTP_HOST}`);
-    console.log(`Port: ${process.env.SMTP_PORT}`);
-    console.log(`User: ${process.env.SMTP_USER}`);
+    console.log("🔍 Testing Resend API Connection...");
+    console.log(`API Key configured: ${!!process.env.RESEND_API_KEY}`);
+    console.log(`Email From: ${process.env.EMAIL_FROM}`);
     
-    await transporter.verify();
-    console.log("✅ SMTP Connection verified successfully!");
+    if (!process.env.RESEND_API_KEY) {
+      console.error("❌ RESEND_API_KEY not configured");
+      return false;
+    }
+    
+    console.log("✅ Resend API Configuration verified!");
     return true;
   } catch (err) {
-    console.error("❌ SMTP Connection failed!");
-    console.error("Error Code:", err.code);
-    console.error("Error Message:", err.message);
-    console.error("Full Error:", JSON.stringify(err, null, 2));
+    console.error("❌ Resend Connection Error!");
+    console.error("Error:", err.message);
     return false;
   }
-};
-
-/**
- * Retry helper for email sending with exponential backoff
- * @param {Function} emailFn - The email sending function
- * @param {number} maxRetries - Maximum number of retry attempts
- */
-const sendWithRetry = async (emailFn, maxRetries = 3) => {
-  let lastError;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await emailFn();
-      console.log(`✅ Email sent successfully on attempt ${attempt}:`, result?.messageId || result);
-      return result;
-    } catch (err) {
-      lastError = err;
-      console.error(`❌ Email send attempt ${attempt} failed`);
-      console.error(`Error Code: ${err.code}`);
-      console.error(`Error Message: ${err.message}`);
-      console.error(`Error Response: ${err.response || 'N/A'}`);
-      
-      // Only retry on network/timeout errors
-      if (err.code && ['ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'].includes(err.code)) {
-        if (attempt < maxRetries) {
-          const delayMs = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
-          console.log(`⏳ Retrying in ${delayMs}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        }
-      } else {
-        // Non-retryable errors, throw immediately
-        console.error(`⚠️ Non-retryable error, throwing immediately`);
-        throw err;
-      }
-    }
-  }
-  
-  throw lastError;
 };
 
 /**
@@ -70,30 +33,55 @@ const sendWithRetry = async (emailFn, maxRetries = 3) => {
  * @param {string} resetUrl
  */
 const sendPasswordResetEmail = async (toEmail, resetUrl) => {
-  const mailOptions = {
-    from: `"WaveMind Solutions" <${process.env.EMAIL_FROM}>`,
-    to: toEmail,
-    subject: "Reset Your WaveMind Password",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #6c47ff;">WaveMind Solutions</h2>
-        <p>You requested a password reset. Click the button below to reset your password.</p>
-        <p>This link is valid for <strong>15 minutes</strong>.</p>
-        <a href="${resetUrl}"
-           style="display:inline-block;padding:12px 24px;background:#6c47ff;
-                  color:#fff;text-decoration:none;border-radius:6px;margin:16px 0;">
-          Reset Password
-        </a>
-        <p>If you didn't request this, please ignore this email.</p>
-        <hr/>
-        <small style="color: #888;">WaveMind Solutions | support@wavemind.com</small>
+  try {
+    const emailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #6c47ff; margin: 0;">🔐 Reset Your Password</h2>
+        </div>
+        
+        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+          You requested a password reset for your WaveMind Solutions account.
+        </p>
+        
+        <p style="color: #555; font-size: 14px;">
+          Click the button below to reset your password. This link is valid for <strong>15 minutes</strong>.
+        </p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}"
+             style="display: inline-block; padding: 12px 30px; background: #6c47ff; color: white; 
+                    text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+            Reset Password
+          </a>
+        </div>
+        
+        <p style="color: #888; font-size: 13px; text-align: center;">
+          If you didn't request this, you can safely ignore this email.
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        <p style="color: #aaa; font-size: 12px; text-align: center;">
+          © WaveMind Solutions. All rights reserved.
+        </p>
       </div>
-    `,
-  };
+    `;
 
-  return sendWithRetry(async () => {
-    return await transporter.sendMail(mailOptions);
-  }, 3);
+    const result = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: toEmail,
+      subject: "🔐 Reset Your WaveMind Password",
+      html: emailContent,
+    });
+
+    console.log(`✅ Password reset email sent to ${toEmail}:`, result.id);
+    return result;
+  } catch (err) {
+    console.error(`❌ Failed to send password reset email to ${toEmail}:`);
+    console.error("Error Code:", err.code);
+    console.error("Error Message:", err.message);
+    throw err;
+  }
 };
 
 /**
@@ -102,29 +90,51 @@ const sendPasswordResetEmail = async (toEmail, resetUrl) => {
  * @param {string} fullName
  */
 const sendWelcomeEmail = async (toEmail, fullName) => {
-  const mailOptions = {
-    from: `"WaveMind Solutions" <${process.env.EMAIL_FROM}>`,
-    to: toEmail,
-    subject: "Welcome to WaveMind Solutions 🎉",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #6c47ff;">Welcome, ${fullName}!</h2>
-        <p>We're thrilled to have you on board at <strong>WaveMind Solutions</strong>.</p>
-        <p>Log in to your dashboard to get started.</p>
-        <a href="${process.env.CLIENT_URL}/login"
-           style="display:inline-block;padding:12px 24px;background:#6c47ff;
-                  color:#fff;text-decoration:none;border-radius:6px;margin:16px 0;">
-          Go to Dashboard
-        </a>
-        <hr/>
-        <small style="color: #888;">WaveMind Solutions | support@wavemind.com</small>
+  try {
+    const emailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #6c47ff; margin: 0;">Welcome, ${fullName}! 🎉</h2>
+        </div>
+        
+        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+          We're thrilled to have you join <strong>WaveMind Solutions</strong>!
+        </p>
+        
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          Your account is all set. Log in to your dashboard to get started and explore all the amazing features we have for you.
+        </p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.CLIENT_URL}/login"
+             style="display: inline-block; padding: 12px 30px; background: #6c47ff; color: white; 
+                    text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+            Go to Dashboard
+          </a>
+        </div>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        <p style="color: #aaa; font-size: 12px; text-align: center;">
+          © WaveMind Solutions. All rights reserved.
+        </p>
       </div>
-    `,
-  };
+    `;
 
-  return sendWithRetry(async () => {
-    return await transporter.sendMail(mailOptions);
-  }, 3);
+    const result = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: toEmail,
+      subject: "🎉 Welcome to WaveMind Solutions!",
+      html: emailContent,
+    });
+
+    console.log(`✅ Welcome email sent to ${toEmail}:`, result.id);
+    return result;
+  } catch (err) {
+    console.error(`❌ Failed to send welcome email to ${toEmail}:`);
+    console.error("Error Code:", err.code);
+    console.error("Error Message:", err.message);
+    throw err;
+  }
 };
 
 /**
@@ -134,29 +144,52 @@ const sendWelcomeEmail = async (toEmail, fullName) => {
  * @param {string} status
  */
 const sendProjectStatusUpdateEmail = async (toEmail, projectName, status) => {
-  const mailOptions = {
-    from: `"WaveMind Solutions" <${process.env.EMAIL_FROM}>`,
-    to: toEmail,
-    subject: `Project Update: ${projectName}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #6c47ff;">Project Status Updated</h2>
-        <p>The status of your project <strong>${projectName}</strong> has been updated to: <strong>${status}</strong>.</p>
-        <p>Log in to view the latest progress.</p>
-        <a href="${process.env.CLIENT_URL}/dashboard"
-           style="display:inline-block;padding:12px 24px;background:#6c47ff;
-                  color:#fff;text-decoration:none;border-radius:6px;margin:16px 0;">
-          View Project
-        </a>
-        <hr/>
-        <small style="color: #888;">WaveMind Solutions | support@wavemind.com</small>
+  try {
+    const emailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #6c47ff; margin: 0;">📊 Project Status Updated</h2>
+        </div>
+        
+        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+          The status of your project <strong>${projectName}</strong> has been updated.
+        </p>
+        
+        <div style="background: #f7f7f7; padding: 15px; border-radius: 6px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0; color: #888; font-size: 14px;">Current Status</p>
+          <p style="margin: 10px 0 0 0; color: #6c47ff; font-size: 24px; font-weight: bold;">${status}</p>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.CLIENT_URL}/dashboard"
+             style="display: inline-block; padding: 12px 30px; background: #6c47ff; color: white; 
+                    text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+            View Project
+          </a>
+        </div>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        <p style="color: #aaa; font-size: 12px; text-align: center;">
+          © WaveMind Solutions. All rights reserved.
+        </p>
       </div>
-    `,
-  };
+    `;
 
-  return sendWithRetry(async () => {
-    return await transporter.sendMail(mailOptions);
-  }, 3);
+    const result = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: toEmail,
+      subject: `📊 Project Update: ${projectName}`,
+      html: emailContent,
+    });
+
+    console.log(`✅ Project status email sent to ${toEmail}:`, result.id);
+    return result;
+  } catch (err) {
+    console.error(`❌ Failed to send project status email to ${toEmail}:`);
+    console.error("Error Code:", err.code);
+    console.error("Error Message:", err.message);
+    throw err;
+  }
 };
 
 /**
@@ -166,29 +199,55 @@ const sendProjectStatusUpdateEmail = async (toEmail, projectName, status) => {
  * @param {string} projectName
  */
 const sendTaskAssignmentEmail = async (toEmail, taskTitle, projectName) => {
-  const mailOptions = {
-    from: `"WaveMind Solutions" <${process.env.EMAIL_FROM}>`,
-    to: toEmail,
-    subject: "New Task Assigned 📋",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #6c47ff;">New Task Assigned</h2>
-        <p>You have been assigned a new task: <strong>${taskTitle}</strong> in project <strong>${projectName}</strong>.</p>
-        <p>Please review the details and start working on it.</p>
-        <a href="${process.env.CLIENT_URL}/dashboard"
-           style="display:inline-block;padding:12px 24px;background:#6c47ff;
-                  color:#fff;text-decoration:none;border-radius:6px;margin:16px 0;">
-          View Task
-        </a>
-        <hr/>
-        <small style="color: #888;">WaveMind Solutions | support@wavemind.com</small>
+  try {
+    const emailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #6c47ff; margin: 0;">📋 New Task Assigned</h2>
+        </div>
+        
+        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+          You have been assigned a new task: <strong>${taskTitle}</strong>
+        </p>
+        
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          Project: <strong>${projectName}</strong>
+        </p>
+        
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          Please review the task details and start working on it.
+        </p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.CLIENT_URL}/dashboard"
+             style="display: inline-block; padding: 12px 30px; background: #6c47ff; color: white; 
+                    text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+            View Task
+          </a>
+        </div>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        <p style="color: #aaa; font-size: 12px; text-align: center;">
+          © WaveMind Solutions. All rights reserved.
+        </p>
       </div>
-    `,
-  };
+    `;
 
-  return sendWithRetry(async () => {
-    return await transporter.sendMail(mailOptions);
-  }, 3);
+    const result = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: toEmail,
+      subject: `📋 New Task: ${taskTitle}`,
+      html: emailContent,
+    });
+
+    console.log(`✅ Task assignment email sent to ${toEmail}:`, result.id);
+    return result;
+  } catch (err) {
+    console.error(`❌ Failed to send task assignment email to ${toEmail}:`);
+    console.error("Error Code:", err.code);
+    console.error("Error Message:", err.message);
+    throw err;
+  }
 };
 
 /**
@@ -198,25 +257,50 @@ const sendTaskAssignmentEmail = async (toEmail, taskTitle, projectName) => {
  * @param {string} time
  */
 const sendMeetingReminderEmail = async (toEmail, meetingTitle, time) => {
-  const mailOptions = {
-    from: `"WaveMind Solutions" <${process.env.EMAIL_FROM}>`,
-    to: toEmail,
-    subject: "Meeting Reminder ⏰",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #6c47ff;">Upcoming Meeting Reminder</h2>
-        <p>This is a reminder for your meeting: <strong>${meetingTitle}</strong>.</p>
-        <p>Scheduled for: <strong>${time}</strong></p>
-        <p>Don't forget to join on time!</p>
-        <hr/>
-        <small style="color: #888;">WaveMind Solutions | support@wavemind.com</small>
+  try {
+    const emailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #6c47ff; margin: 0;">⏰ Meeting Reminder</h2>
+        </div>
+        
+        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+          This is a reminder for your upcoming meeting:
+        </p>
+        
+        <div style="background: #f7f7f7; padding: 15px; border-radius: 6px; margin: 20px 0;">
+          <p style="margin: 0 0 10px 0; color: #888; font-size: 14px;">Meeting Title</p>
+          <p style="margin: 0 0 15px 0; color: #333; font-size: 18px; font-weight: bold;">${meetingTitle}</p>
+          <p style="margin: 0 0 5px 0; color: #888; font-size: 14px;">Scheduled Time</p>
+          <p style="margin: 0; color: #6c47ff; font-size: 16px; font-weight: bold;">${time}</p>
+        </div>
+        
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          Don't forget to join on time!
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        <p style="color: #aaa; font-size: 12px; text-align: center;">
+          © WaveMind Solutions. All rights reserved.
+        </p>
       </div>
-    `,
-  };
+    `;
 
-  return sendWithRetry(async () => {
-    return await transporter.sendMail(mailOptions);
-  }, 3);
+    const result = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: toEmail,
+      subject: `⏰ Meeting Reminder: ${meetingTitle}`,
+      html: emailContent,
+    });
+
+    console.log(`✅ Meeting reminder email sent to ${toEmail}:`, result.id);
+    return result;
+  } catch (err) {
+    console.error(`❌ Failed to send meeting reminder email to ${toEmail}:`);
+    console.error("Error Code:", err.code);
+    console.error("Error Message:", err.message);
+    throw err;
+  }
 };
 
 /**
@@ -225,27 +309,60 @@ const sendMeetingReminderEmail = async (toEmail, meetingTitle, time) => {
  * @param {string} otp
  */
 const sendOTPEmail = async (toEmail, otp) => {
-  const mailOptions = {
-    from: `"WaveMind Solutions" <${process.env.EMAIL_FROM}>`,
-    to: toEmail,
-    subject: "Verify Your WaveMind Account 🛡️",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 20px;">
-        <h2 style="color: #6c47ff; text-align: center;">Account Verification</h2>
-        <p style="text-align: center; color: #555;">Please use the following One-Time Password (OTP) to verify your account.</p>
-        <div style="background: #f7f7f7; padding: 20px; border-radius: 12px; text-align: center; margin: 30px 0;">
-          <h1 style="font-size: 40px; letter-spacing: 10px; color: #111; margin: 0;">${otp}</h1>
+  try {
+    const emailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 40px;">
+          <h2 style="color: #6c47ff; margin: 0;">🛡️ Verify Your Account</h2>
         </div>
-        <p style="text-align: center; color: #888; font-size: 14px;">This OTP is valid for <strong>10 minutes</strong>. Do not share this code with anyone.</p>
-        <hr style="border: none; border-top: 1px solid #f0f0f0; margin: 30px 0;" />
-        <p style="text-align: center; color: #aaa; font-size: 12px;">WaveMind Solutions | support@wavemind.com</p>
+        
+        <p style="color: #333; font-size: 16px; line-height: 1.6; text-align: center; margin: 0 0 30px 0;">
+          Please use the following One-Time Password (OTP) to verify your account.
+        </p>
+        
+        <div style="background: linear-gradient(135deg, #6c47ff 0%, #8b63ff 100%); padding: 40px; 
+                    border-radius: 12px; text-align: center; margin: 40px 0;">
+          <p style="color: rgba(255,255,255,0.7); font-size: 14px; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 2px;">
+            Your OTP Code
+          </p>
+          <div style="background: rgba(255,255,255,0.15); padding: 20px; border-radius: 8px; backdrop-filter: blur(10px);">
+            <h1 style="font-size: 48px; font-weight: bold; color: white; margin: 0; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+              ${otp}
+            </h1>
+          </div>
+        </div>
+        
+        <p style="color: #666; font-size: 14px; line-height: 1.6; text-align: center; margin: 0 0 10px 0;">
+          <strong>⏱️ This OTP will expire in 10 minutes</strong>
+        </p>
+        
+        <p style="color: #999; font-size: 13px; text-align: center; margin: 0;">
+          Do not share this code with anyone. WaveMind Solutions will never ask for your OTP.
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 40px 0;" />
+        
+        <p style="color: #aaa; font-size: 12px; text-align: center;">
+          © WaveMind Solutions. All rights reserved.
+        </p>
       </div>
-    `,
-  };
+    `;
 
-  return sendWithRetry(async () => {
-    return await transporter.sendMail(mailOptions);
-  }, 3);
+    const result = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: toEmail,
+      subject: "🛡️ Verify Your WaveMind Account",
+      html: emailContent,
+    });
+
+    console.log(`✅ OTP email sent to ${toEmail}:`, result.id);
+    return result;
+  } catch (err) {
+    console.error(`❌ Failed to send OTP email to ${toEmail}:`);
+    console.error("Error Code:", err.code);
+    console.error("Error Message:", err.message);
+    throw err;
+  }
 };
 
 module.exports = {
@@ -255,5 +372,5 @@ module.exports = {
   sendTaskAssignmentEmail,
   sendMeetingReminderEmail,
   sendOTPEmail,
-  testSMTPConnection,
+  testResendConnection,
 };

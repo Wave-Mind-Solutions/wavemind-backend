@@ -24,7 +24,7 @@ const {
   registerSchema,
   loginSchema,
 } = require("../middleware/validate.middleware");
-const { testSMTPConnection } = require("../services/email.service");
+const { testResendConnection } = require("../services/email.service");
 
 // Public routes
 router.post("/register", validate(registerSchema), register);
@@ -36,10 +36,10 @@ router.post("/forgot-password", forgotPassword);
 
 // Test endpoint for email diagnostics (dev only)
 router.get("/test-email-connection", async (req, res) => {
-  const isConnected = await testSMTPConnection();
+  const isConnected = await testResendConnection();
   res.json({ 
     success: isConnected, 
-    message: isConnected ? "SMTP connected successfully" : "SMTP connection failed - check logs"
+    message: isConnected ? "Resend API configured successfully" : "Resend API not configured - check logs"
   });
 });
 

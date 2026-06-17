@@ -1,88 +1,73 @@
 /**
- * Email Diagnostic Test Script
+ * Email Diagnostic Test Script for Resend API
  * Usage: node server/utils/testEmail.js (from project root)
  * 
- * This script tests if your SMTP configuration works
+ * This script tests if your Resend API configuration works
  * and helps diagnose email sending issues
  */
 
 require("dotenv").config({ path: __dirname + "/../.env" });
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-console.log("🔍 Email Configuration Test\n");
+console.log("🔍 Email Configuration Test (Resend API)\n");
 console.log("Configuration:");
-console.log("  SMTP Host:", process.env.SMTP_HOST);
-console.log("  SMTP Port:", process.env.SMTP_PORT);
-console.log("  SMTP User:", process.env.SMTP_USER);
+console.log("  API Key configured:", !!process.env.RESEND_API_KEY);
 console.log("  Email From:", process.env.EMAIL_FROM);
 console.log("");
 
-// Create transporter with same config as mailer.js
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  connectionTimeout: 10 * 60 * 1000,
-  socketTimeout: 10 * 60 * 1000,
-  pool: {
-    maxConnections: 5,
-    maxMessages: 100,
-    rateDelta: 1000,
-    rateLimit: 5,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
+if (!process.env.RESEND_API_KEY) {
+  console.error("❌ RESEND_API_KEY is not set in .env file");
+  console.error("   Get your API key from: https://resend.com/api-keys");
+  process.exit(1);
+}
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function testEmail() {
   try {
-    console.log("📡 Step 1: Testing SMTP Connection...");
-    await transporter.verify();
-    console.log("✅ SMTP Connection: OK\n");
+    console.log("📧 Step 1: Testing Resend API Configuration...");
+    console.log("  API Key length:", process.env.RESEND_API_KEY.length, "characters");
+    console.log("✅ Configuration verified\n");
 
-    console.log("📧 Step 2: Sending Test Email...");
-    const testEmail = process.env.SMTP_USER; // Send to same email
-    const info = await transporter.sendMail({
-      from: `"WaveMind Test" <${process.env.EMAIL_FROM}>`,
-      to: testEmail,
-      subject: "WaveMind SMTP Test 🧪",
+    console.log("📬 Step 2: Sending Test Email...");
+    const testEmail = process.env.SMTP_USER || "test@example.com";
+    
+    const info = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: process.env.SMTP_USER || "your-email@example.com",
+      subject: "🧪 WaveMind Resend API Test",
       html: `
-        <h2>SMTP Configuration Test</h2>
-        <p>If you received this email, your SMTP setup is working correctly!</p>
-        <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+        <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+          <h2 style="color: #6c47ff;">✅ Resend API Test Successful!</h2>
+          <p>If you received this email, your Resend API configuration is working correctly.</p>
+          <div style="background: #f0f0f0; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>Test Details:</strong></p>
+            <p style="margin: 5px 0; font-size: 14px; color: #666;">Email From: ${process.env.EMAIL_FROM}</p>
+            <p style="margin: 5px 0; font-size: 14px; color: #666;">Timestamp: ${new Date().toISOString()}</p>
+          </div>
+          <p style="color: #888; font-size: 12px;">© WaveMind Solutions</p>
+        </div>
       `,
     });
 
     console.log("✅ Email Sent Successfully!");
-    console.log("  Message ID:", info.messageId);
-    console.log("  Response:", info.response);
-    console.log("\n📬 Check your email for the test message!");
+    console.log("  Message ID:", info.id);
+    console.log("\n📬 Check your email inbox for the test message!");
+    console.log("   Note: Emails may take a few seconds to arrive.\n");
     
     process.exit(0);
   } catch (err) {
     console.error("❌ Error:");
-    console.error("  Code:", err.code);
     console.error("  Message:", err.message);
-    console.error("  Response:", err.response);
     
-    if (err.code === "EAUTH") {
-      console.error("\n💡 Hint: SMTP authentication failed!");
-      console.error("   - Check SMTP_USER and SMTP_PASS in .env");
-      console.error("   - For Gmail, use an App Password (not regular password)");
-      console.error("   - Enable 'Less secure app access' if using Gmail");
-    } else if (err.code === "ECONNREFUSED") {
-      console.error("\n💡 Hint: Connection refused!");
-      console.error("   - Check if SMTP_HOST and SMTP_PORT are correct");
-      console.error("   - Check your firewall/network settings");
-    } else if (err.code === "ETIMEDOUT") {
-      console.error("\n💡 Hint: Connection timeout!");
-      console.error("   - Firewall may be blocking SMTP port");
-      console.error("   - Try port 465 instead of 587");
+    if (err.message.includes("Invalid token")) {
+      console.error("\n💡 Hint: Invalid API Key!");
+      console.error("   - Check that RESEND_API_KEY in .env is correct");
+      console.error("   - Get your API key from: https://resend.com/api-keys");
+    } else if (err.message.includes("Invalid email")) {
+      console.error("\n💡 Hint: Invalid email address!");
+      console.error("   - Ensure EMAIL_FROM is a valid email address");
+      console.error("   - For Resend, use an email from your verified domain");
     }
     
     process.exit(1);
