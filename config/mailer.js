@@ -5,8 +5,8 @@ const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: false, // use TLS
+  port: Number(process.env.SMTP_PORT) || 465,  // Try 465 (SSL) instead of 587
+  secure: true, // Use SSL encryption
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -20,7 +20,7 @@ const transporter = nodemailer.createTransport({
     rateLimit: 5,
   },
   tls: {
-    rejectUnauthorized: false, // Allow self-signed certs (Gmail compatibility)
+    rejectUnauthorized: false,
   },
 });
 
