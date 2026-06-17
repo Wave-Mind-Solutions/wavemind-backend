@@ -5,6 +5,28 @@
 const transporter = require("../config/mailer");
 
 /**
+ * Test SMTP connection
+ */
+const testSMTPConnection = async () => {
+  try {
+    console.log("🔍 Testing SMTP Connection...");
+    console.log(`Host: ${process.env.SMTP_HOST}`);
+    console.log(`Port: ${process.env.SMTP_PORT}`);
+    console.log(`User: ${process.env.SMTP_USER}`);
+    
+    await transporter.verify();
+    console.log("✅ SMTP Connection verified successfully!");
+    return true;
+  } catch (err) {
+    console.error("❌ SMTP Connection failed!");
+    console.error("Error Code:", err.code);
+    console.error("Error Message:", err.message);
+    console.error("Full Error:", JSON.stringify(err, null, 2));
+    return false;
+  }
+};
+
+/**
  * Retry helper for email sending with exponential backoff
  * @param {Function} emailFn - The email sending function
  * @param {number} maxRetries - Maximum number of retry attempts
@@ -14,20 +36,26 @@ const sendWithRetry = async (emailFn, maxRetries = 3) => {
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await emailFn();
+      const result = await emailFn();
+      console.log(`✅ Email sent successfully on attempt ${attempt}:`, result?.messageId || result);
+      return result;
     } catch (err) {
       lastError = err;
-      console.warn(`Email send attempt ${attempt} failed:`, err.message);
+      console.error(`❌ Email send attempt ${attempt} failed`);
+      console.error(`Error Code: ${err.code}`);
+      console.error(`Error Message: ${err.message}`);
+      console.error(`Error Response: ${err.response || 'N/A'}`);
       
       // Only retry on network/timeout errors
       if (err.code && ['ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'].includes(err.code)) {
         if (attempt < maxRetries) {
           const delayMs = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
-          console.log(`Retrying in ${delayMs}ms...`);
+          console.log(`⏳ Retrying in ${delayMs}ms...`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
       } else {
         // Non-retryable errors, throw immediately
+        console.error(`⚠️ Non-retryable error, throwing immediately`);
         throw err;
       }
     }
@@ -227,4 +255,5 @@ module.exports = {
   sendTaskAssignmentEmail,
   sendMeetingReminderEmail,
   sendOTPEmail,
+  testSMTPConnection,
 };
