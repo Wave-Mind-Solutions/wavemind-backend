@@ -25,9 +25,9 @@ appEventEmitter.on("user:registered", async ({ email, fullName }) => {
 // Listen for Project Status Update event
 appEventEmitter.on("project:statusUpdated", async ({ projectId, status }) => {
   try {
-    const project = await Project.findById(projectId).populate("client");
-    if (project && project.client && project.client.email) {
-      const client = project.client;
+    const project = await Project.findById(projectId).populate("clientId");
+    if (project && project.clientId && project.clientId.email) {
+      const client = project.clientId;
       // Respect user settings
       if (client.notificationSettings?.projectUpdates === false) {
         console.log(`Notification skipped: User ${client.email} disabled project updates.`);

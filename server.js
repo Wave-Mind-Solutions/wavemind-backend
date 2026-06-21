@@ -35,9 +35,27 @@ const startServer = async () => {
   // Attach Socket.io
   initSocket(httpServer);
 
+  // Handle server errors (e.g., EADDRINUSE)
+  httpServer.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`❌ Port ${PORT} is already in use.`);
+      if (process.env.NODE_ENV === "development") {
+        const fallbackPort = Number(PORT) + 1;
+        console.log(`🔄 Attempting fallback to port ${fallbackPort}...`);
+        httpServer.listen(fallbackPort);
+      } else {
+        process.exit(1);
+      }
+    } else {
+      console.error("❌ Server error:", err.message);
+      process.exit(1);
+    }
+  });
+
   httpServer.listen(PORT, () => {
+    const boundPort = httpServer.address()?.port || PORT;
     console.log(
-      `\n🚀 WaveMind Server running in [${process.env.NODE_ENV}] mode on port ${PORT}\n`
+      `\n🚀 WaveMind Server running in [${process.env.NODE_ENV}] mode on port ${boundPort}\n`
     );
   });
 };

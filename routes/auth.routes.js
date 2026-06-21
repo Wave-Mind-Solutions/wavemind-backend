@@ -10,6 +10,7 @@ const {
   verifyOTP,
   resendOTP,
   forgotPassword,
+  resetPassword,
   getProfile,
   updateSettings,
   setup2FA,
@@ -33,6 +34,7 @@ router.post("/verify-otp", verifyOTP);
 router.post("/resend-otp", resendOTP);
 router.post("/verify-2fa-login", verify2FALogin);
 router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
 
 // Test endpoint for email diagnostics (dev only)
 router.get("/test-email-connection", async (req, res) => {

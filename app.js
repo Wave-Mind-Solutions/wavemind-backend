@@ -23,6 +23,7 @@ const exportRoutes = require("./routes/export.routes");
 const feedbackRoutes = require("./routes/feedback.routes");
 const blogRoutes = require("./routes/blog.routes");
 const leadRoutes = require("./routes/lead.routes");
+const aiRoutes = require("./routes/ai.routes");
 
 const app = express();
 
@@ -83,6 +84,7 @@ app.use("/api/export", exportRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/blog", blogRoutes);
 app.use("/api/lead", leadRoutes);
+app.use("/api/ai", aiRoutes);
 
 // ── 404 Fallback ───────────────────────────────────────────────────────────
 app.use((req, res) => {

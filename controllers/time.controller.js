@@ -6,6 +6,10 @@ const logTime = async (req, res) => {
   const task = await Task.findById(taskId).populate("projectId");
   if (!task) return res.status(404).json({ success: false, message: "Task not found" });
 
+  if (!task.projectId) {
+    return res.status(400).json({ success: false, message: "Task does not have an associated project" });
+  }
+
   const timeEntry = await TimeEntry.create({
     userId: req.user._id,
     taskId,

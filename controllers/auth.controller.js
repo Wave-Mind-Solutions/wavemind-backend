@@ -265,6 +265,55 @@ const forgotPassword = async (req, res) => {
   }
 };
 
+// ── POST /api/auth/reset-password/:token ──────────────────────────────────
+const resetPassword = async (req, res) => {
+  const { password } = req.body;
+  const { token } = req.params;
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must be at least 6 characters long.",
+    });
+  }
+
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(token)
+    .digest("hex");
+
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: Date.now() },
+  }).select("+resetPasswordToken +resetPasswordExpires");
+
+  if (!user) {
+    return res.status(400).json({
+      success: false,
+      message: "Password reset token is invalid or has expired.",
+    });
+  }
+
+  // Set the new password
+  user.password = password;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
+  await user.save();
+
+  // Record activity
+  await activityService.recordActivity({
+    userId: user._id,
+    actionType: "UPDATE",
+    entityType: "User",
+    description: "Password reset successfully via email recovery link",
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Password has been reset successfully. You can now log in.",
+  });
+};
+
 // ── GET /api/auth/profile ───────────────────────────────────────────────────
 const getProfile = async (req, res) => {
   const user = await User.findById(req.user._id);
@@ -377,6 +426,7 @@ module.exports = {
   verifyOTP,
   resendOTP,
   forgotPassword, 
+  resetPassword,
   getProfile, 
   updateSettings,
   setup2FA,
