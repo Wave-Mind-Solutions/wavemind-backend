@@ -1,6 +1,9 @@
 /**
  * Admin Controller
- * Requirements review, project creation, team assignment, developer listing
+ * Requirements review, project management, team assignment, stats
+ *
+ * Security: All routes require admin role (enforced at route level).
+ * Field updates are whitelisted — no arbitrary field injection allowed.
  */
 const Requirement = require("../models/Requirement.model");
 const Project = require("../models/Project.model");
@@ -20,7 +23,7 @@ const getAllRequirements = async (req, res) => {
   const skip = (Number(page) - 1) * Number(limit);
   const [requirements, total] = await Promise.all([
     Requirement.find(filter)
-      .populate("clientId", "fullName email avatar")
+      .populate("clientId", "fullName email phone avatar")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit)),
@@ -63,6 +66,8 @@ const convertRequirement = async (req, res) => {
     budget: budget || requirement.budget,
     email: requirement.email,
     phone: requirement.phone,
+    status: "In Review",
+    progress: 0,
   });
 
   // Mark requirement as converted
@@ -120,15 +125,126 @@ const assignTeam = async (req, res) => {
     .json({ success: true, message: "Team assigned successfully.", data: project });
 };
 
+// ── GET /api/admin/projects/stats ─────────────────────────────────────────
+// IMPORTANT: This route MUST be registered BEFORE /api/admin/projects/:id
+// to prevent Express from treating "stats" as a Mongo ObjectId
+const getProjectStats = async (req, res) => {
+  const [statusCounts, budgetAgg] = await Promise.all([
+    Project.aggregate([
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+    ]),
+    Project.aggregate([
+      { $group: { _id: null, totalBudget: { $sum: "$budget" }, totalProjects: { $sum: 1 } } },
+    ]),
+  ]);
+
+  // Build a flat stats object from aggregation
+  const statusMap = {};
+  for (const s of statusCounts) {
+    statusMap[s._id] = s.count;
+  }
+
+  const totals = budgetAgg[0] || { totalBudget: 0, totalProjects: 0 };
+
+  res.status(200).json({
+    success: true,
+    stats: {
+      totalProjects: totals.totalProjects,
+      totalBudget: totals.totalBudget,
+      inReview: statusMap["In Review"] || 0,
+      approved: statusMap["Approved"] || 0,
+      inProgress: statusMap["In Progress"] || 0,
+      onHold: statusMap["On Hold"] || 0,
+      completed: statusMap["Completed"] || 0,
+      rejected: statusMap["Rejected"] || 0,
+    },
+  });
+};
+
+// ── GET /api/admin/projects ────────────────────────────────────────────────
+const getAllProjects = async (req, res) => {
+  const { status, page = 1, limit = 50 } = req.query;
+  const filter = {};
+  if (status) filter.status = status;
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const [projects, total] = await Promise.all([
+    Project.find(filter)
+      .populate("clientId", "fullName email phone avatar")
+      .populate("assignedTeam", "fullName email developerType avatar")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit)),
+    Project.countDocuments(filter),
+  ]);
+
+  res.status(200).json({ success: true, total, data: projects });
+};
+
+// ── GET /api/admin/projects/:id ───────────────────────────────────────────
+const getProjectById = async (req, res) => {
+  const { id } = req.params;
+
+  const project = await Project.findById(id)
+    .populate("clientId", "fullName email phone avatar createdAt")
+    .populate("assignedTeam", "fullName email developerType avatar")
+    .populate("requirementId", "title description priority techStack");
+
+  if (!project) {
+    return res.status(404).json({ success: false, message: "Project not found." });
+  }
+
+  res.status(200).json({ success: true, data: project });
+};
+
 // ── PATCH /api/admin/projects/:id ─────────────────────────────────────────
 const updateProject = async (req, res) => {
   const { id } = req.params;
-  const updates = req.body;
 
-  const project = await Project.findByIdAndUpdate(id, updates, {
+  // SECURITY: Strict field whitelist — admin cannot inject arbitrary fields
+  const ADMIN_ALLOWED_FIELDS = [
+    "status",
+    "progress",
+    "assignedTeam",
+    "adminNotes",
+    "timeline",
+    "deadline",
+    "title",
+    "description",
+  ];
+
+  const safeUpdates = {};
+  for (const field of ADMIN_ALLOWED_FIELDS) {
+    if (req.body[field] !== undefined) {
+      safeUpdates[field] = req.body[field];
+    }
+  }
+
+  if (Object.keys(safeUpdates).length === 0) {
+    return res.status(400).json({ success: false, message: "No valid fields to update." });
+  }
+
+  // Enforce business rules
+  if (safeUpdates.status === "Completed") {
+    safeUpdates.progress = 100;
+  } else if (safeUpdates.status === "In Review") {
+    // Don't force reset progress if admin explicitly provided one
+    if (safeUpdates.progress === undefined) {
+      safeUpdates.progress = 0;
+    }
+  }
+
+  // Clamp progress to 0-100
+  if (typeof safeUpdates.progress === "number") {
+    safeUpdates.progress = Math.min(100, Math.max(0, safeUpdates.progress));
+  }
+
+  const project = await Project.findByIdAndUpdate(id, safeUpdates, {
     new: true,
     runValidators: true,
-  });
+  })
+    .populate("clientId", "fullName email phone")
+    .populate("assignedTeam", "fullName email developerType");
 
   if (!project) {
     return res
@@ -136,29 +252,45 @@ const updateProject = async (req, res) => {
       .json({ success: false, message: "Project not found." });
   }
 
-  // Notify the client about project update
-  const io = getIO();
-  io.to(`user_${project.clientId}`).emit("project_updated", {
-    message: `Project "${project.title}" has been updated.`,
-    project,
-  });
-
-  // Notify assigned developers
-  project.assignedTeam.forEach((devId) => {
-    io.to(`user_${devId}`).emit("project_updated", {
-      message: `Project "${project.title}" status changed to ${project.status}.`,
+  // Notify the client about project update via Socket.io
+  try {
+    const io = getIO();
+    io.to(`user_${project.clientId._id || project.clientId}`).emit("project_updated", {
+      message: `Your project "${project.title}" has been updated to: ${project.status}`,
+      project: {
+        _id: project._id,
+        status: project.status,
+        progress: project.progress,
+        adminNotes: project.adminNotes,
+      },
     });
-  });
 
-  // Trigger Email Notification for Status Update
-  if (updates.status) {
-    notificationService.notifyProjectStatusUpdated({
-      projectId: project._id,
-      status: project.status,
-    });
+    // Notify assigned developers
+    if (project.assignedTeam && project.assignedTeam.length > 0) {
+      project.assignedTeam.forEach((dev) => {
+        io.to(`user_${dev._id || dev}`).emit("project_updated", {
+          message: `Project "${project.title}" updated to ${project.status}`,
+        });
+      });
+    }
+  } catch (socketErr) {
+    // Socket notification is non-critical — don't fail the response
+    console.warn("[SOCKET] Notification failed:", socketErr.message);
   }
 
-  res.status(200).json({ success: true, data: project });
+  // Email notification if status changed
+  if (safeUpdates.status) {
+    try {
+      notificationService.notifyProjectStatusUpdated({
+        projectId: project._id,
+        status: project.status,
+      });
+    } catch (notifErr) {
+      console.warn("[NOTIFICATION] Email notification failed:", notifErr.message);
+    }
+  }
+
+  res.status(200).json({ success: true, message: "Project updated successfully.", data: project });
 };
 
 // ── GET /api/admin/specialists ────────────────────────────────────────────
@@ -172,26 +304,6 @@ const getDevelopers = async (req, res) => {
   );
 
   res.status(200).json({ success: true, data: developers });
-};
-
-// ── GET /api/admin/projects ────────────────────────────────────────────────
-const getAllProjects = async (req, res) => {
-  const { status, page = 1, limit = 10 } = req.query;
-  const filter = {};
-  if (status) filter.status = status;
-
-  const skip = (Number(page) - 1) * Number(limit);
-  const [projects, total] = await Promise.all([
-    Project.find(filter)
-      .populate("clientId", "fullName email")
-      .populate("assignedTeam", "fullName email developerType")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit)),
-    Project.countDocuments(filter),
-  ]);
-
-  res.status(200).json({ success: true, total, data: projects });
 };
 
 // ── POST /api/admin/tasks ──────────────────────────────────────────────────
@@ -256,10 +368,12 @@ module.exports = {
   convertRequirement,
   assignTeam,
   updateProject,
-  getDevelopers,
+  getProjectStats,
   getAllProjects,
+  getProjectById,
   createTask,
   getAdmins,
   getClients,
   getAllDeliverables,
+  getDevelopers,
 };

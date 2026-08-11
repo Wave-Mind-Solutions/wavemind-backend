@@ -19,7 +19,7 @@ const generateToken = (id) =>
 
 // ── POST /api/auth/register ────────────────────────────────────────────────
 const register = async (req, res) => {
-  const { fullName, email, password, role, developerType } = req.body;
+  const { fullName, email, phone, password, role, developerType } = req.body;
 
   // Prevent self-creating admin accounts via API
   if (role === "admin") {
@@ -44,6 +44,7 @@ const register = async (req, res) => {
   const user = await User.create({
     fullName,
     email,
+    phone: phone ? phone.trim() : "",
     password,
     role: role || "client",
     developerType: developerType || "",

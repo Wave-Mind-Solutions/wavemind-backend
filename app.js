@@ -24,6 +24,8 @@ const feedbackRoutes = require("./routes/feedback.routes");
 const blogRoutes = require("./routes/blog.routes");
 const leadRoutes = require("./routes/lead.routes");
 const aiRoutes = require("./routes/ai.routes");
+const projectsRoutes = require("./routes/projects.routes");
+const pricingRoutes = require("./routes/pricing.routes");
 
 const app = express();
 
@@ -85,6 +87,8 @@ app.use("/api/feedback", feedbackRoutes);
 app.use("/api/blog", blogRoutes);
 app.use("/api/lead", leadRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/projects", projectsRoutes);
+app.use("/api/pricing", pricingRoutes);
 
 // ── 404 Fallback ───────────────────────────────────────────────────────────
 app.use((req, res) => {
